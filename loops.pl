@@ -78,7 +78,10 @@ flatten_and_clean(G, Gs, (G,Gs)).
 % get_spec defines the meaning of each iteration specifier
 
 get_specs(Specs, Firsts, Lasts, Pregoals, RecHead, AuxGoals, RecCall) :-
-	get_specs(Specs, Firsts, [], Lasts, [], Pregoals, true, RecHead, [], AuxGoals, true, RecCall, []).
+	get_specs(Specs,
+		  Firsts, [], Lasts, [],
+		  Pregoals, true, RecHead, [],
+		  AuxGoals, true, RecCall, []).
 
 get_specs((Specs1,Specs2),
 	  Firsts, Firsts0, Lasts, Lasts0,
@@ -234,7 +237,8 @@ compute_stop(From, To, Step, Stop, Goal) :- Step < 0, !,
 system:goal_expansion(Specs do PredTemplate, NewGoal) :-
 	prolog_load_context(module, M),
 	predicate_property(M:do(_,_), imported_from(loops)),
-	variant_sha1(do(Specs,PredTemplate), Name),
+	copy_term_nat(do(Specs,PredTemplate), Copy),
+	variant_sha1(Copy, Name),
 	t_do((Specs do PredTemplate), Name, NewGoal, [Clause1,Clause2]),
 	(   functor(NewGoal, Name, Arity),
 	    current_predicate(Name/Arity)
