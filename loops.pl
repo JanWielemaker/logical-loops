@@ -219,6 +219,13 @@ get_spec(foreacharg(A,Struct),
 	[S,I0,I2|RecHeads], RecHeads,
 	(I1 is I0+1,arg(I0,S,A),Goals), Goals,
 	[S,I1,I2|RecCalls], RecCalls) :- !.
+get_spec(foreacharg(A,Struct,I0),
+	[Struct,1,N1|Firsts], Firsts,
+	[_,I0,I0|Lasts], Lasts,
+	(functor(Struct,_,N),N1 is N+1,Pregoals), Pregoals,
+	[S,I0,I2|RecHeads], RecHeads,
+	(I1 is I0+1,arg(I0,S,A),Goals), Goals,
+	[S,I1,I2|RecCalls], RecCalls) :- !.
 get_spec(fromto(From,I0,I1,To),		% accumulator pair needed
 	[From,To|Firsts], Firsts,
 	[L0,L0|Lasts], Lasts,
