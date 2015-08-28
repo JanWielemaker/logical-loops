@@ -346,17 +346,126 @@ compute_stop(From, To, Step, Stop, Goal) :- Step < 0, !,
 		 *	     EXPANSION		*
 		 *******************************/
 
-system:goal_expansion(Specs do PredTemplate, NewGoal) :-
+system:goal_expansion(Goal, NewGoal) :-
+	Goal = (Spec do PredTemplate),
 	prolog_load_context(module, M),
 	predicate_property(M:do(_,_), imported_from(loops)),
-	copy_term_nat(do(Specs,PredTemplate), Copy),
+	(   shared_variables(Goal, Params)
+	->  consistent_params(Spec, Params),
+	    Loop = ((Params,Spec) do PredTemplate)
+	;   consistent_params(Spec, param()),
+	    Loop = Goal
+	),
+	copy_term_nat(Loop, Copy),
 	variant_sha1(Copy, Name),
-	t_do((Specs do PredTemplate), Name, NewGoal, [Clause1,Clause2]),
+	t_do(Loop, Name, NewGoal, Clauses),
 	(   functor(NewGoal, Name, Arity),
 	    current_predicate(Name/Arity)
 	->  true
-	;   compile_aux_clauses(
-		[ Clause1,
-		  Clause2
-		])
+	;   compile_aux_clauses(Clauses)
 	).
+
+%%	consistent_params(+Spec, +ImplicitParms) is det.
+%
+%	Test that the  declared  parameters   are  consistent  with  the
+%	implicit parameters. The declaration is considered consistent if
+%	it is missing or it is   consistent with the implicitly computed
+%	parameters.
+
+consistent_params(Spec, SharedT) :-
+	compound_name_arguments(SharedT, _, Shared),
+	phrase(spec_params(Spec), Params0),
+	sort(Params0, Params),
+	(   Params == Shared
+	->  true
+	;   Params == []
+	->  true
+	;   ord_subtract(Shared, Params, NotDecl),
+	    ord_subtract(Params, Shared, NotShared),
+	    print_message(warning, loop(wrong_param_decl(NotDecl, NotShared)))
+	).
+
+spec_params(Var) -->
+	{ var(Var), !,
+	  instantiation_error(Var)
+	}.
+spec_params((A,B)) -->
+	spec_params(A),
+	spec_params(B).
+spec_params(Param) -->
+	{ Param =.. [param|Parms] }, !,
+	list(Parms).
+spec_params(_) -->
+	[].
+
+list([]) --> [].
+list([H|T]) --> [H], list(T).
+
+
+%%	shared_variables(+Goal, -Params) is semidet.
+%
+%	True when Params is a term param(Param1, ...), where Param1, ...
+%	are variables shared with the remainder of the clause.
+
+shared_variables(Goal, Params) :-
+	prolog_load_context(term, Clause),
+	copy_term_except(Goal, Clause, Clause2),
+	term_variables(Clause2, EnvVars),
+	term_variables(Goal, TemplateVars),
+	sort(EnvVars, EnvVarsS),
+	sort(TemplateVars, TemplateVarsS),
+	ord_intersection(EnvVarsS, TemplateVarsS, Shared),
+	Shared \== [],
+	Params =.. [param|Shared].
+
+copy_term_except(Except, Term, Copy) :-
+	==(Term, Except), !,
+	Copy = [].
+copy_term_except(Except, Term, Copy) :-
+	compound(Term), !,
+	compound_name_arguments(Term, Name, Args0),
+	maplist(copy_term_except(Except), Args0, Args),
+	compound_name_arguments(Copy, Name, Args).
+copy_term_except(_, Term, Term).
+
+
+		 /*******************************
+		 *	      MESSAGES		*
+		 *******************************/
+
+:- multifile
+	prolog:message//1.
+
+prolog:message(loop(wrong_param_decl(NotDecl, NotShared))) -->
+	[ 'do/2: inconsistent parameter declaration'-[], nl ],
+	not_declared(NotDecl),
+	not_shared(NotShared).
+
+not_declared([]) --> [].
+not_declared(Vars) -->
+	[ '\tShared but not declared: '-[] ], vars(Vars).
+
+not_shared([]) --> [].
+not_shared(Vars) -->
+	[ '\tDeclared but not shared: '-[] ], vars(Vars).
+
+vars([]) --> [].
+vars([H|T]) -->
+	var(H),
+	(   {T==[]}
+	->  []
+	;   {T=[Last]}
+	->  [' and '-[] ],
+	    var(Last)
+	;   [', '-[]],
+	    vars(T)
+	).
+
+var(H) -->
+	{ prolog_load_context(variable_names, Names),
+	  member(Name=Var, Names),
+	  Var == H, !
+	},
+	[ '~w'-[Name] ].
+var(H) -->
+	[ '~p'-[H] ].
