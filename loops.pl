@@ -27,11 +27,111 @@
 	  ]).
 :- use_module(library(error)).
 :- use_module(library(lists)).
+:- use_module(library(ordsets)).
+:- use_module(library(apply)).
 
-%%	Specs do PredTemplate
+/** <module> Logical loops
+
+This module implements _logical loops_, initially introduced in ECLiPSe.
+The implementation is based on  the  original   version  as  it is found
+[here](http://eclipseclp.org/software/loops/index.html). This version is
+also used by SICStus 4.0.
+
+Logical loops allow for interating  over  the   members  of  one or more
+collections. The loop is rewritten  at   compile  time  into an auxilery
+recursive  predicate.  This  implies  that   it  uses  normal  _forward_
+execution  of  Prolog,  as  opposed  to  forall(member(X,List),Goal)  or
+findall(R, member(X,List),process(X,R), Result).
+*/
+
+%%	(+Spec do :Body)
+%
+%	Logical loop. Body is executed for   each iteration as specified
+%	by Spec. The do/2 construct is compiled to a recursive predicate
+%	using expand_goal/2. The execution is   _forwards_  and bindings
+%	introduced by Body are  thus   retained.  The  following example
+%	creates a list with 5 a's:
+%
+%	  ==
+%	  ?- length(List,5), (foreach(X,List) do X = a).
+%	  List = [a,a,a,a,a].
+%	  ==
+%
+%	Multiple iterators may be separated by   the  =|,|= (comma). All
+%	_terminating_ iterators must terminate at  the same iteration or
+%	the goal fails. The above may be  re-written as below, using the
+%	for(Var,Low,High) iterator to specify the   number of iterations
+%	and the foreach(X,List) to generate the _List_.
+%
+%	  ==
+%	  ?- (for(_,1,5), foreach(X,List) do X = a).
+%	  List = [a,a,a,a,a].
+%	  ==
+%
+%	The following iterators are defined:
+%
+%	  * foreach(-Elem,?List)
+%	  Iterate over all elements of List.  Acts as a terminating
+%	  iterator if List is bound to a proper list.  Builds a list
+%	  if List is unbound.
+%	  * foreacharg(-Arg,+Compound)
+%	  Iterate over all argument of a compound term.  Acts as a
+%	  terminating iterator.
+%	  * foreacharg(-Arg,+Compound,-Index)
+%	  As foreacharg(-Arg,+Compound), but also makes the argument
+%	  index (1..) available to Body.
+%	  * for(-I,+Low,+High)
+%	  Iterate over Low..High with steps of one.  Same as
+%	  for(I,Low,High,1)
+%	  * for(-I,+Low,+High,+Step)
+%	  Iterate over Low..High with steps of size Step.
+%	  * count(-I,+Low,?High)
+%	  Same as for(I,Low,High), but High may be unbound, creating
+%	  a non-terminating iterator that binds High to
+%	  `Low+Iterations`.
+%	  * fromto(?From,?I0,?I1,?To)
+%	  This is the most general interator.  The Body steps I0 to
+%	  I1.  The initial value is From and the iteration stops at
+%	  To.  For example, a counting loop can be implemented using
+%
+%	    ==
+%	    ?- fromto(1,I0,I1,5) do writeln(I0), I1 is I0+1.
+%	    ==
+%
+%	  This construct is typically used as an aggregator though.
+%	  For example:
+%
+%	    ==
+%	    sumlist(List,Sum) :-
+%	       (   foreach(X,List),
+%		   fromto(0,S0,S1,Sum)
+%	       do  S1 is S0+X
+%	       ).
+%	    ==
+%
+%	 In addition to interators, Spec   may define *parameters* using
+%	 the construct param(Var1,  ...),  i.e.,   a  term  with functor
+%	 `param` and 1 or more (variable)  arguments. Where variables in
+%	 Body are by default  local  to   body,  variables  declared  as
+%	 parameters are _shared_ with the rest of the clause.
+%
+%	 *Issues and discussion*
+%
+%	  - The _base clause_ of the generated recursive predicate is
+%	    uses a cut (!).  Non-determinism of the Body is retained.
+%	    For iterators such as _count_, this is probably correct.
+%	    For e.g., _foreach_, non-determinism seems more logical.
+%
+%	@compat	The current set of iterators is compatible with
+%		SICStus 4.  Current ECLiPSe versions have a more
+%		extended set.
+%	@compat	The param(Param, ...) declaration is optional.  If
+%		omitted, variables that are shared with the enclosing
+%		clause are considered parameters.
 
 (Specs do PredTemplate) :-
-	get_specs(Specs, Firsts, BaseHead, PreGoals, RecHead, AuxGoals, RecCall), !,
+	get_specs(Specs, Firsts, BaseHead,
+		  PreGoals, RecHead, AuxGoals, RecCall), !,
 	call(PreGoals),
 	do_loop(Firsts, body(RecHead,(AuxGoals,PredTemplate),RecCall), BaseHead).
 (Specs do _PredTemplate) :-
@@ -217,6 +317,11 @@ get_spec(Param,
 	append(Globs, RecHeads, GlobsRecHeads),
 	append(Globs, RecCalls, GlobsRecCalls).
 
+
+%%	compute_stop(+From, +To, +Step, ?Stop, -Goal) is det.
+%
+%	Goal is a body term that contains   Stop. When executed, Stop is
+%	unified with the final iteration value.
 
 compute_stop(From, To, 1, Stop, Goal) :- !,
 	Goal = (Stop is max(From, To+1)).
